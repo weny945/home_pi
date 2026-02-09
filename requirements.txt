@@ -1,0 +1,113 @@
+# ========================================
+# 树莓派语音助手系统 - Python 依赖
+# Version 1.0.0
+# ========================================
+#
+# ✅ Python 版本要求: 3.10.x
+# ================================
+# - 推荐: Python 3.10.x (稳定兼容)
+# - 支持: Python 3.10 - 3.11
+# - ❌ 不支持: Python 3.12 (tflite-runtime 不兼容)
+#
+# 💡 Ubuntu 22.04/24.04 / 树莓派5 用户:
+# - Ubuntu 24.04 默认 Python 3.12 不兼容
+# - 需要额外安装 Python 3.10
+# - 项目的 Python 安装在虚拟环境 .venv 中
+#
+# 📦 快速安装 Python 3.10:
+# $ sudo add-apt-repository ppa:deadsnakes/ppa -y
+# $ sudo apt update
+# $ sudo apt install -y python3.10 python3.10-venv python3.10-dev
+# $ python3.10 -m venv .venv
+# $ source .venv/bin/activate
+# $ pip install -r requirements.txt
+#
+# 📚 详细指南:
+# - 快速参考: docs/deploy/python-version-quickref.md
+# - 完整配置: docs/deploy/ubuntu24-python-setup.md
+#
+# ========================================
+
+# 核心依赖
+numpy>=1.21.0,<2.0.0
+pyyaml>=6.0
+pyaudio>=0.2.12
+
+# 唤醒词检测
+# ⚠️ openwakeword 依赖 tflite-runtime，支持 Python 3.10-3.11
+openwakeword>=0.5.0
+
+# 文本转语音 (TTS) - 第一阶段 1.1 - Piper TTS
+# 注意: Piper TTS 需要 ONNX 模型
+# - 模型大小: ~63MB
+# - 运行内存: ~180MB
+# - 修复: piper-tts 1.4.0 缺少 espeakbridge.so，使用 piper_phonemize 替代
+piper-tts>=1.4.0
+piper-phonemize>=1.1.0
+scipy>=1.10.0
+
+# 语音识别 (STT) + 语音活动检测 (VAD) - 第一阶段 1.2 - FunASR
+# 注意: FunASR 需要下载模型
+# - SenseVoiceSmall 模型: ~200MB
+# - fsmn-vad 模型: ~10MB
+# - 运行内存: ~300MB
+# - 依赖: torchaudio (需要与 PyTorch 版本匹配)
+# - 系统依赖: ffmpeg (音频处理)
+funasr>=1.0.0          # FunASR 核心库
+modelscope>=0.0.0     # 模型下载和管理
+torchaudio>=2.0.0     # 音频处理库 (FunASR 依赖)
+ffmpeg-python>=0.2.0  # ffmpeg Python 绑定 (FunASR 需要)
+
+# 对话生成 (LLM) - 第一阶段 1.3 - 千问 API
+# 注意: 需要申请 DashScope API Key
+# - API 提供: 阿里云 DashScope
+# - 需要: DASHSCOPE_API_KEY 环境变量或配置文件
+dashscope>=1.14.0     # 阿里云千问 SDK (支持 Qwen 模型)
+
+# 远程 TTS API - 混合 TTS 引擎
+# 注意: 用于调用 GPT-SoVITS 远程 TTS 服务
+# - 依赖: HTTP 客户端库
+requests>=2.31.0      # HTTP 客户端（远程 TTS API 调用）
+
+# 闹钟功能 - 时间解析
+# 注意: 用于解析自然语言时间（如"明天早上7点"）
+# - 支持中文时间表达
+# - 完全离线运行
+dateparser>=1.2.0     # 自然语言时间解析库
+
+# 音乐播放功能 - Phase 1.8
+# 注意: 用于播放本地音乐文件
+# - 支持格式: mp3, wav, ogg, flac 等
+# - ARM64 兼容
+pygame>=2.5.0         # 音乐播放库（纯 Python，跨平台）
+
+# 智能开关控制 - GeekOpen MQTT 开关
+# 注意: 用于通过 MQTT 控制 GeekOpen 智能开关
+# - 支持: 开灯、关灯、切换、查询状态
+# - 协议: MQTT (通过 paho-mqtt)
+# - 依赖: MQTT Broker (如 Mosquitto)
+paho-mqtt>=1.6.0      # MQTT 客户端库（跨平台，ARM64 兼容）
+
+# 测试依赖
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+
+# 性能监控（可选）
+psutil>=5.9.0
+
+# ========================================
+# 多 Python 版本说明
+# ========================================
+#
+# Ubuntu 支持同时安装多个 Python 版本：
+# - /usr/bin/python3.10  ← 项目使用
+# - /usr/bin/python3.11  ← 可用
+# - /usr/bin/python3.12  ← 系统默认（不兼容）
+#
+# 项目的 Python 环境在虚拟环境 .venv 中：
+# - 独立隔离，不影响系统
+# - 使用 Python 3.10 创建
+# - 所有依赖安装在 .venv/lib/python3.10/site-packages/
+#
+# ========================================

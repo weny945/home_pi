@@ -1,0 +1,41 @@
+# ========================================
+# 语音助手系统配置文件
+# Voice Assistant Configuration
+# 版本: 0.1.0 (第一阶段)
+# ========================================
+
+# ========================================
+# 音频配置
+# ========================================
+audio:
+  input_device: "seeed-4mic-voicecard"  # ReSpeaker 4-Mic 设备名称
+  sample_rate: 16000                     # 采样率 16kHz
+  channels: 1                            # 单声道
+  chunk_size: 512                        # 音频块大小 (32ms @ 16kHz)
+  format: "int16"                        # 16-bit PCM
+
+# ========================================
+# 唤醒词配置
+# ========================================
+wakeword:
+  engine: "openwakeword"
+  model: "hey_jarvis_v0.1.ppn"         # 唤醒词模型路径
+  threshold: 0.5                         # 检测阈值 (0-1)
+  model_dir: "./models/openwakeword"         # 模型存储目录
+
+# ========================================
+# 唤醒反馈配置
+# ========================================
+feedback:
+  enabled: true
+  mode: "beep"                           # "beep" 蜂鸣声 或 "audio_file" 音频文件
+  audio_file: "./assets/wake_success.wav"  # 音频文件路径 (WAV格式)
+  beep_duration_ms: 200                  # 蜂鸣声持续时间 (毫秒)
+  beep_frequency: 880                    # 蜂鸣声频率 (Hz)
+
+# ========================================
+# 日志配置
+# ========================================
+logging:
+  level: "INFO"                          # DEBUG, INFO, WARNING, ERROR
+  file: "./logs/phase1.log"              # 日志文件路径

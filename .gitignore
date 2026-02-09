@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code 相关文件
+.claude/
+CLAUDE.md
+.claude_history
+
+# 日志
+logs/
+*.log
+
+# 模型文件 (大文件)
+models/*.ppn
+models/*.pth
+models/*.pt
+models/*.onnx
+models/*.bin
+models/piper/
+models/jieba_cache/
+models/funast/
+
+# 配置 (敏感信息)
+.env
+*.secret
+config.yaml
+!config.yaml.example
+
+# 临时文件
+*.tmp
+.DS_Store
+
+# 测试覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 音频文件 (示例)
+assets/*.wav
+assets/*.mp3
+!assets/.gitkeep
+/cache/
+
+# 数据文件（用户隐私）
+data/*.db
+data/*.sqlite
+data/*.json
+!data/.gitkeep
+
+# ALSA 配置（可能包含设备特定配置）
+.asoundrc
+assets/piper/*.zip
+
+# pip 意外生成的日志文件
+=*
+
+# 音乐文件（用户自定义）
+assets/music/*
+!assets/music/README.md
+!assets/music/.gitkeep
