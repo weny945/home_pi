@@ -68,27 +68,57 @@ else
 fi
 echo ""
 
-# 4. 停止旧服务（如果运行中）
-echo_info "检查服务状态..."
-if systemctl is-active --quiet "$SERVICE_NAME"; then
-    echo_warn "服务正在运行，先停止..."
-    sudo systemctl stop "$SERVICE_NAME"
-    sleep 1
-    echo_info "✅ 旧服务已停止"
+# 3.5. 检查并加载环境变量文件
+echo_info "检查环境变量文件..."
+if [ ! -f "$PROJECT_DIR/.env.sh" ]; then
+    echo_warn "环境变量文件 .env.sh 不存在"
+    echo_warn "⚠️  LLM/TTS/Picovoice 功能将不可用"
+    echo ""
+    echo "创建方法："
+    echo "  1. 编辑 .env.sh 文件，设置 DASHSCOPE_API_KEY, PICOVOICE_ACCESS_KEY 等"
+    echo "  2. 获取方式: https://dashscope.console.aliyun.com/"
+    echo "  3. 获取方式: https://console.picovoice.ai/"
+    echo ""
 else
-    echo_info "服务未运行"
+    # 加载环境变量
+    echo_info "正在加载环境变量..."
+    set +e  # 临时关闭 errexit，避免 .env.sh 中的 source 命令失败导致脚本退出
+    source "$PROJECT_DIR/.env.sh" > /dev/null 2>&1
+    set -e  # 恢复 errexit
+
+    # 检查关键环境变量是否加载成功
+    if [ -n "$PICOVOICE_ACCESS_KEY" ] && [ "$PICOVOICE_ACCESS_KEY" != "your_picovoice_access_key_here" ]; then
+        echo_info "✅ Picovoice Access Key 已加载"
+    else
+        echo_warn "⚠️  Picovoice Access Key 未配置或使用默认值"
+        echo_warn "唤醒词检测可能无法工作"
+    fi
+
+    if [ -n "$DASHSCOPE_API_KEY" ] && [ "$DASHSCOPE_API_KEY" != "sk-your-dashscope-api-key-here" ]; then
+        echo_info "✅ DashScope API Key 已加载"
+    else
+        echo_warn "⚠️  DashScope API Key 未配置"
+    fi
+
+    echo_info "✅ 环境变量已加载"
 fi
 echo ""
 
-# 5. 启用服务（开机自启）
+# 4. 启用服务（开机自启）
 echo_info "启用开机自启..."
 sudo systemctl enable "$SERVICE_NAME" 2>/dev/null
 echo_info "✅ 已启用开机自启"
 echo ""
 
-# 6. 启动服务
-echo_info "启动服务..."
-sudo systemctl start "$SERVICE_NAME"
+# 5. 重启服务
+echo_info "重启服务..."
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo_info "服务正在运行，执行重启..."
+    sudo systemctl restart "$SERVICE_NAME"
+else
+    echo_info "服务未运行，执行启动..."
+    sudo systemctl start "$SERVICE_NAME"
+fi
 sleep 2
 
 # 7. 显示服务状态

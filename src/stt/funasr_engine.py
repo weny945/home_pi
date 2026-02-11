@@ -153,7 +153,7 @@ class FunASRSTTEngine(STTEngine):
             result = self._model.generate(
                 input=audio_data,
                 cache={},
-                language="auto",  # 自动检测语言（支持中英文混合）
+                language="zh",  # 强制中文识别，避免误识别成日语/英语等
                 use_itn=True,  # 使用逆文本标准化
             )
 
@@ -196,7 +196,7 @@ class FunASRSTTEngine(STTEngine):
             result = self._model.generate(
                 input=audio_file,
                 cache={},
-                language="auto",
+                language="zh",  # 强制中文识别
                 use_itn=True,
             )
 

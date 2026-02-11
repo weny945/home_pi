@@ -406,7 +406,7 @@ class StateMachine:
             self._echo_detection_words.extend(wake_words)
         else:
             # 默认唤醒词
-            self._echo_detection_words.extend(["派蒙", "alexa", "小爱", "siri", "天猫精灵"])
+            self._echo_detection_words.extend(["胡桃", "alexa", "小爱", "siri", "天猫精灵"])
 
         # 添加唤醒回复消息
         if wake_reply_messages:
@@ -417,14 +417,10 @@ class StateMachine:
 
         logger.info(f"回声检测词汇表: {self._echo_detection_words}")
 
-        # 冷却期：防止退出对话后立即被唤醒
-        self._cooldown_until: Optional[float] = None  # 冷却结束时间戳
-        self._cooldown_duration = 3.0  # 冷却时长（秒）
-
-        # 启动缓冲期：IDLE状态启动后丢弃前N帧音频，清空检测器缓冲区
-        # OpenWakeWord 的内部缓冲区约为 2-3 秒，需要更多帧数才能完全清空
-        self._startup_buffer_frames = 100  # 启动缓冲帧数 (约3.2秒 @ 16kHz, 512帧/块)
-        self._startup_frame_count = 0  # 启动缓冲计数器
+        # 🔧 唤醒词检测控制标志（借鉴小爱同学等商业产品的做法）
+        # 检测到唤醒词后立即禁用检测，对话完成后延迟重新启用
+        self._wakeword_detection_enabled = True  # 是否启用唤醒词检测
+        self._wakeword_resume_time: Optional[float] = None  # 恢复检测的时间戳
 
         # Phase 1.7: 夜间静默时段（防止被唤醒）
         quiet_hours_config = self._config.get("quiet_hours", {})
@@ -494,6 +490,23 @@ class StateMachine:
             self._feedback_player.play_wake_feedback()
 
         elif state == State.LISTENING:
+            # 🔧 关键优化：清空音频输入缓冲区，丢弃积累的数据
+            # 在 IDLE 状态期间可能积累了音频帧，需要清空避免误触发
+            logger.info("🧹 清空音频输入缓冲区...")
+            clear_count = 0
+            while True:
+                try:
+                    frame = self._audio_input.read()
+                    if frame is None:
+                        break
+                    clear_count += 1
+                    if clear_count >= 50:  # 最多清空 50 帧，避免阻塞
+                        break
+                except:
+                    break
+            if clear_count > 0:
+                logger.info(f"✅ 已清空 {clear_count} 帧音频数据")
+
             # **重要：添加额外的停顿，让TTS回声完全消散**
             # 特别是多轮对话时，上一轮的TTS回声可能还没完全消散
             if self._in_conversation and self._conversation_turn_count > 1:
@@ -539,6 +552,12 @@ class StateMachine:
             if hasattr(self, '_music_control_mode') and self._music_control_mode:
                 logger.info("退出音乐控制模式")
                 self._music_control_mode = False
+
+            # 🔧 延迟恢复唤醒词检测（借鉴小爱同学等商业产品的做法）
+            # 等待 1.5 秒让音频稳定，避免 TTS 回声或残留音频触发误检测
+            resume_delay = 1.5  # 秒
+            self._wakeword_resume_time = time.time() + resume_delay
+            logger.info(f"⏰ 唤醒词检测将在 {resume_delay} 秒后恢复")
 
     def start(self) -> None:
         """启动状态机"""
@@ -645,32 +664,51 @@ class StateMachine:
                         else:
                             # 每10秒记录一次，避免日志刷屏
                             if int(time.time()) % 10 == 0:
-                                logger.info("🔔 闹钟响铃中，可以说'派蒙，停止'")
+                                logger.info("🔔 闹钟响铃中，可以说'胡桃，停止'")
                         # 跳过静默时段检查，继续进行正常的唤醒词检测
                     else:
                         # Phase 1.7: 检查是否在静默时段（夜间免打扰）
                         if self._quiet_hours and self._is_in_quiet_hours():
                             # 静默时段内，跳过唤醒词检测
-                            # 每60秒记录一次日志
-                            if int(time.time()) % 60 == 0:
+                            # 每10分钟记录一次日志（INFO 级别）
+                            current_time = time.time()
+                            if not hasattr(self, '_last_quiet_log_time'):
+                                self._last_quiet_log_time = 0
+
+                            if current_time - self._last_quiet_log_time >= 600:
                                 now = datetime.now()
                                 logger.info(f"🌙 静默时段中，暂停唤醒词检测 ({now.strftime('%H:%M')})")
+                                self._last_quiet_log_time = current_time
                             return  # 跳过本次批量处理
 
-                        # 检查冷却期：防止退出对话后立即被唤醒
-                        if self._cooldown_until and time.time() < self._cooldown_until:
-                            # 还在冷却期，跳过唤醒词检测
-                            remaining_time = self._cooldown_until - time.time()
-                            # P1-4 优化: 添加级别检查，避免不必要的字符串格式化
-                            if int(time.time()) % 2 == 0 and logger.isEnabledFor(logging.DEBUG):
-                                logger.debug(f"冷却期中，剩余 {remaining_time:.1f}s")
-                            return  # 跳过本次批量处理
+                        # 🔧 检查唤醒词检测是否启用（借鉴小爱同学等商业产品的做法）
+                        # 在对话流程中禁用检测，避免误触发
+                        if not self._wakeword_detection_enabled:
+                            # 检查是否到了恢复检测的时间
+                            if self._wakeword_resume_time and time.time() >= self._wakeword_resume_time:
+                                # 🔧 关键：恢复前先清空检测器内部缓冲区
+                                logger.info("🧹 清空检测器内部缓冲区...")
+                                silence_frame = np.zeros(512, dtype=np.int16)
+                                clear_frames = 100  # 约 3.2 秒 @ 16kHz
 
-                        # 冷却期结束，清除标记并启动启动缓冲期
-                        if self._cooldown_until and time.time() >= self._cooldown_until:
-                            self._cooldown_until = None
-                            self._startup_frame_count = 0  # 重置启动缓冲计数器
-                            logger.info("⏰ 冷却期结束，启动启动缓冲期，清空检测器缓冲区")
+                                # 临时禁用日志
+                                wakeword_logger = logging.getLogger('src.wake_word.openwakeword_detector')
+                                old_level = wakeword_logger.level
+                                wakeword_logger.setLevel(logging.ERROR)
+
+                                try:
+                                    for _ in range(clear_frames):
+                                        self._detector.process_frame(silence_frame)
+                                finally:
+                                    wakeword_logger.setLevel(old_level)
+
+                                # 恢复检测
+                                self._wakeword_detection_enabled = True
+                                self._wakeword_resume_time = None
+                                logger.info("✅ 唤醒词检测已恢复")
+                            else:
+                                # 还未到恢复时间，跳过检测
+                                return  # 跳过本次批量处理
 
                     # Phase 1.8: 音乐播放时，提高检测灵敏度
                     # 临时调整阈值（如果检测器支持）
@@ -686,28 +724,17 @@ class StateMachine:
                     if frame_idx == 0 and int(time.time()) % 5 == 0 and len(audio_frame) > 0 and logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"环境底噪: {noise_floor:.4f}, 阈值: {self._adaptive_vad.get_adaptive_threshold():.4f}")
 
-                # 检查启动缓冲期：处理帧但忽略检测结果，清空OpenWakeWord的内部缓冲区
-                if self._startup_frame_count < self._startup_buffer_frames:
-                    self._startup_frame_count += 1
-                    if self._startup_frame_count == 1:  # 第一次记录
-                        logger.info(f"🔄 启动缓冲期：处理前 {self._startup_buffer_frames} 帧 ({self._startup_buffer_frames * 512 / 16000:.1f}s)，忽略检测结果")
-                    elif self._startup_frame_count == self._startup_buffer_frames:  # 最后一次记录
-                        logger.info("✅ 启动缓冲期结束，开始正常唤醒检测")
-
-                    # **关键**：仍然调用检测器来清空其内部缓冲区，但忽略结果
-                    # 临时禁用检测器日志，避免大量误唤醒日志污染输出
-                    wakeword_logger = logging.getLogger('src.wake_word.openwakeword_detector')
-                    old_level = wakeword_logger.level
-                    try:
-                        wakeword_logger.setLevel(logging.WARNING)  # 只显示WARNING及以上级别
-                        self._detector.process_frame(audio_frame)
-                    finally:
-                        wakeword_logger.setLevel(old_level)
-                    continue  # 继续处理下一帧
+                # 🔧 优化：移除启动缓冲期逻辑
+                # 缓冲区已在检测到唤醒词时清空，无需启动缓冲期
 
                 # 检测唤醒词（每帧都需要检测）
                 detected = self._detector.process_frame(audio_frame)
                 if detected:
+                    # 🔧 立即禁用唤醒词检测（借鉴小爱同学等商业产品的做法）
+                    # 避免在对话流程中误触发
+                    self._wakeword_detection_enabled = False
+                    logger.info("🔇 唤醒词检测已禁用（对话流程中）")
+
                     # Phase 1.8: 如果音乐正在播放，使用音乐控制模式
                     if self._music_playing:
                         logger.info("🎵 音乐播放中检测到唤醒词，进入音乐控制模式")
@@ -859,9 +886,8 @@ class StateMachine:
                         self._llm_engine.reset_conversation()
                         logger.info("LLM 对话历史已重置")
 
-                    # 设置冷却期，防止立即被误唤醒
-                    self._cooldown_until = time.time() + self._cooldown_duration
-                    logger.info(f"⏰ 启动冷却期 ({self._cooldown_duration}s)，防止误唤醒")
+                    # 🔧 优化：移除冷却期，允许立即再次唤醒
+                    # 缓冲区已在检测到唤醒词时清空，无需冷却期
 
                     self.transition_to(State.IDLE)
 
@@ -1277,9 +1303,7 @@ class StateMachine:
             self._retry_count = 0
             logger.info(f"max_retries=0，不重试，直接返回 IDLE")
 
-            # 设置冷却期，防止立即被误唤醒
-            self._cooldown_until = time.time() + self._cooldown_duration
-            logger.info(f"⏰ 启动冷却期 ({self._cooldown_duration}s)，防止误唤醒")
+            # 🔧 优化：移除冷却期，允许立即再次唤醒
 
             self.transition_to(State.IDLE)
             return
@@ -1300,9 +1324,7 @@ class StateMachine:
                 if self._alarm_manager:
                     self._alarm_manager.check_and_trigger()
 
-            # 设置冷却期，防止立即被误唤醒
-            self._cooldown_until = time.time() + self._cooldown_duration
-            logger.info(f"⏰ 启动冷却期 ({self._cooldown_duration}s)，防止误唤醒")
+            # 🔧 优化：移除冷却期，允许立即再次唤醒
 
             self.transition_to(State.IDLE)
         else:
@@ -1476,6 +1498,15 @@ class StateMachine:
 
             logger.info(f"  ✅ 识别完成: {user_text}")
 
+            # 上下文感知意图检测：根据当前状态调整优先级
+            # 如果闹钟正在响铃，优先检测闹钟意图
+            if self._alarm_ringing and self._alarm_manager:
+                logger.debug("闹钟响铃中，优先检测闹钟意图")
+                alarm_intent = self._check_alarm_intent(user_text)
+                if alarm_intent:
+                    self._handle_alarm_intent(alarm_intent)
+                    return
+
             # 智能开关意图检测（优先级最高）
             if self._switch_controller:
                 switch_intent = self._check_switch_intent(user_text)
@@ -1494,8 +1525,8 @@ class StateMachine:
                     self._handle_music_intent(music_intent)
                     return  # 跳过正常的 LLM 流程
 
-            # Phase 1.7: 检查是否为闹钟意图
-            if self._alarm_manager:
+            # Phase 1.7: 检查是否为闹钟意图（非响铃状态）
+            if not self._alarm_ringing and self._alarm_manager:
                 alarm_intent = self._check_alarm_intent(user_text)
                 if alarm_intent:
                     # 处理闹钟意图
@@ -1598,16 +1629,31 @@ class StateMachine:
             print(f"\n❌ 生成失败: {e}")
             self.transition_to(State.ERROR)
             return
-        except NetworkError as e:
-            logger.error(f"网络连接失败: {e}")
-            print(f"\n❌ 网络连接失败: {e}")
-            self.transition_to(State.ERROR)
-            return
         except Exception as e:
-            logger.exception(f"LLM 处理失败（未预期错误）: {e}")
-            print(f"\n❌ 处理失败: {e}")
-            self.transition_to(State.ERROR)
-            return
+            # 检查是否为网络连接错误
+            error_msg = str(e)
+            if any(keyword in error_msg for keyword in ['Network is unreachable', 'ConnectionError', 'Failed to establish', 'Errno 101', 'Errno 113']):
+                # 网络不可达，使用友好的提示
+                friendly_msg = "抱歉，现在胡桃在遨游太空，不在服务区"
+                logger.error(f"网络连接失败: {e}")
+                print(f"\n🌌 {friendly_msg}")
+
+                # 播放 TTS 提示
+                try:
+                    audio_data = self._tts_engine.synthesize(friendly_msg)
+                    self._feedback_player.play_audio(audio_data)
+                    logger.info("已播放网络错误提示")
+                except Exception as tts_error:
+                    logger.error(f"TTS 播放失败: {tts_error}")
+
+                self.transition_to(State.IDLE)
+                return
+            else:
+                # 其他未知错误
+                logger.exception(f"LLM 处理失败（未预期错误）: {e}")
+                print(f"\n❌ 处理失败: {e}")
+                self.transition_to(State.ERROR)
+                return
 
         # Step 3: TTS 语音合成
         if not self._tts_engine:
@@ -1895,18 +1941,12 @@ class StateMachine:
 
             # 根据操作决定下一步
             if action in ["play", "resume"]:
-                # 播放音乐：确保音乐播放状态为 True，并设置冷却期
+                # 播放音乐：确保音乐播放状态为 True
                 self._music_playing = True  # 重要：标记音乐正在播放
                 logger.info("🎵 音乐开始播放，后续唤醒将进入音乐控制模式")
                 print(f"\n🎵 音乐播放中，再次唤醒可控制：停止、暂停、音量\n")
 
-                # 设置冷却期，防止 TTS 回声触发误唤醒
-                self._cooldown_until = time.time() + self._cooldown_duration
-                logger.info(f"设置冷却期 {self._cooldown_duration}s，防止回声误唤醒")
-
-                # 重置启动缓冲帧数，清空检测器缓冲区
-                self._startup_frame_count = 0
-                logger.info("重置唤醒词检测器缓冲区")
+                # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
                 # 退出音乐控制模式（如果在该模式下）
                 if hasattr(self, '_music_control_mode'):
@@ -1921,10 +1961,7 @@ class StateMachine:
                 print(f"\n💬 音乐已停止，后续唤醒进入对话模式\n")
 
                 # 退出音乐控制模式
-                self._cooldown_until = time.time() + self._cooldown_duration
-                logger.info(f"设置冷却期 {self._cooldown_duration}s，防止回声误唤醒")
-                self._startup_frame_count = 0
-                logger.info("重置唤醒词检测器缓冲区")
+                # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
                 # 退出音乐控制模式
                 if hasattr(self, '_music_control_mode'):
@@ -1940,12 +1977,9 @@ class StateMachine:
                     logger.info("🎵 音乐继续播放，保持音乐控制模式")
                     print(f"\n🎵 音乐继续播放，保持控制模式\n")
 
-                    # 设置短冷却期（1秒），然后直接重新进入 LISTENING
-                    self._cooldown_until = time.time() + 1.0
-                    self._startup_frame_count = 0
-
-                    # 等待冷却期
-                    time.sleep(1.0)
+                    # 🔧 优化：移除冷却期，允许快速连续控制
+                    # 短暂停顿，让用户准备
+                    time.sleep(0.3)
 
                     # 重新进入 LISTENING（继续监听控制命令）
                     self.transition_to(State.LISTENING)
@@ -1955,8 +1989,7 @@ class StateMachine:
                     logger.info("🎵 音乐停止，后续唤醒将进入对话模式")
                     print(f"\n💬 音乐已停止，后续唤醒进入对话模式\n")
 
-                    self._cooldown_until = time.time() + self._cooldown_duration
-                    self._startup_frame_count = 0
+                    # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
                     if hasattr(self, '_music_control_mode'):
                         self._music_control_mode = False
@@ -1964,11 +1997,8 @@ class StateMachine:
                     self.transition_to(State.IDLE)
 
             else:
-                # 其他操作也返回 IDLE，同样需要冷却期
-                self._cooldown_until = time.time() + self._cooldown_duration
-                logger.info(f"设置冷却期 {self._cooldown_duration}s，防止回声误唤醒")
-                self._startup_frame_count = 0
-                logger.info("重置唤醒词检测器缓冲区")
+                # 其他操作也返回 IDLE
+                # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
                 # 退出音乐控制模式（如果在该模式下）
                 if hasattr(self, '_music_control_mode'):
@@ -1980,10 +2010,7 @@ class StateMachine:
             logger.error(f"处理音乐意图失败: {e}")
             print(f"\n❌ 处理音乐请求失败: {e}\n")
 
-            # 即使出错也设置冷却期，防止错误提示音触发误唤醒
-            self._cooldown_until = time.time() + self._cooldown_duration
-            self._startup_frame_count = 0
-            logger.info("异常：设置冷却期并重置检测器缓冲区")
+            # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
             self.transition_to(State.IDLE)
 
@@ -2262,13 +2289,7 @@ class StateMachine:
                 self.transition_to(State.LISTENING)
             else:
                 # 设置闹钟后返回 IDLE
-                # 设置冷却期，防止 TTS 回声触发误唤醒
-                self._cooldown_until = time.time() + self._cooldown_duration
-                logger.info(f"设置冷却期 {self._cooldown_duration}s，防止回声误唤醒")
-
-                # 重置启动缓冲帧数，清空检测器缓冲区
-                self._startup_frame_count = 0
-                logger.info("重置唤醒词检测器缓冲区")
+                # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
                 self.transition_to(State.IDLE)
 
@@ -2440,13 +2461,7 @@ class StateMachine:
                     if self._alarm_manager:
                         self._alarm_manager.check_and_trigger()
 
-            # 设置冷却期，防止 TTS 回声触发误唤醒
-            self._cooldown_until = time.time() + self._cooldown_duration
-            logger.info(f"设置冷却期 {self._cooldown_duration}s，防止回声误唤醒")
-
-            # 重置启动缓冲帧数，清空检测器缓冲区
-            self._startup_frame_count = 0
-            logger.info("重置唤醒词检测器缓冲区")
+            # 🔧 优化：缓冲区已在唤醒时清空，无需冷却期
 
             self.transition_to(State.IDLE)
 

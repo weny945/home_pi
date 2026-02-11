@@ -38,7 +38,7 @@ class QwenLLMEngine(LLMEngine):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "qwen-turbo",
+        model: Optional[str] = None,  # 不再提供默认值，强制从配置读取
         temperature: float = 0.7,
         max_tokens: int = 3000,
         max_tokens_long: int = 8000,
@@ -79,7 +79,13 @@ class QwenLLMEngine(LLMEngine):
         # 设置 API Key
         dashscope.api_key = self._api_key
 
-        # 模型配置（支持任意模型名称）
+        # 模型配置（必须显式指定，防止使用默认值产生意外费用）
+        if not model:
+            raise ValueError(
+                "LLM 模型未配置。请在 config.yaml 的 llm.model 中指定模型名称 "
+                "(如 'qwen-turbo', 'qwen-plus', 'qwen-max' 或其他自定义模型)"
+            )
+
         self._model = model
         self._model_name = model
 

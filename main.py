@@ -27,8 +27,26 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config import get_config
 from src.audio import ReSpeakerInput
-from src.wake_word import OpenWakeWordDetector
-from src.feedback import AudioFeedbackPlayer, TTSFeedbackPlayer
+from src.wake_word import OpenWakeWordDetector, PicovoiceDetector
+
+
+def _expand_env_var(value: str) -> str:
+    """
+    展开环境变量
+
+    将 ${VAR_NAME} 格式替换为实际的环境变量值
+
+    Args:
+        value: 可能包含环境变量引用的字符串
+
+    Returns:
+        str: 展开后的字符串
+    """
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        env_var = value[2:-1]
+        return os.environ.get(env_var, value)
+    return value
+from src.feedback import AudioFeedbackPlayer, TTSFeedbackPlayer, GenericTTSFeedbackPlayer
 from src.state_machine import StateMachine
 
 # Phase 1.2 新增
@@ -100,6 +118,25 @@ def setup_logging(config) -> None:
 def main():
     """主函数"""
     try:
+        # 0. 检查环境变量
+        print("检查环境变量...")
+        required_env_vars = []
+
+        # 检查是否使用 Picovoice（需要 Access Key）
+        config_temp = get_config()
+        wakeword_config_temp = config_temp.get_wakeword_config()
+        if wakeword_config_temp.get('engine') == 'picovoice':
+            access_key = wakeword_config_temp.get('access_key', '')
+            access_key = _expand_env_var(access_key) if access_key else None
+            if not access_key or access_key.startswith('${'):
+                print("❌ 错误：Picovoice Access Key 未配置！")
+                print("   请先加载环境变量: source .env.sh")
+                print("   或设置环境变量: export PICOVOICE_ACCESS_KEY='your-key-here'")
+                print("   获取方式: https://console.picovoice.ai/")
+                sys.exit(1)
+
+        print("✅ 环境变量检查通过")
+
         # 1. 加载配置
         print("加载配置文件...")
         config = get_config()
@@ -126,10 +163,27 @@ def main():
         # 4. 初始化唤醒词检测器
         logger.info("初始化唤醒词检测器...")
         wakeword_config = config.get_wakeword_config()
-        detector = OpenWakeWordDetector(
-            model_path=wakeword_config.get('model'),
-            threshold=wakeword_config.get('threshold', 0.5)
-        )
+        engine = wakeword_config.get('engine', 'openwakeword')
+
+        if engine == 'picovoice':
+            logger.info("使用 Picovoice Porcupine 唤醒词引擎")
+
+            # 展开环境变量
+            access_key = wakeword_config.get('access_key')
+            access_key = _expand_env_var(access_key) if access_key else None
+
+            detector = PicovoiceDetector(
+                keyword_path=wakeword_config.get('model'),
+                sensitivity=wakeword_config.get('sensitivity', 0.5),
+                access_key=access_key,
+                model_path=wakeword_config.get('porcupine_model')  # 可选的 Porcupine 模型
+            )
+        else:  # 默认使用 openwakeword
+            logger.info("使用 OpenWakeWord 唤醒词引擎")
+            detector = OpenWakeWordDetector(
+                model_path=wakeword_config.get('model'),
+                threshold=wakeword_config.get('threshold', 0.5)
+            )
 
         # 5. 初始化反馈播放器
         logger.info("初始化反馈播放器...")
@@ -137,23 +191,39 @@ def main():
         feedback_mode = feedback_config.get('mode', 'beep')
 
         if feedback_mode == 'tts':
-            # Piper TTS 语音回复
-            tts_config = feedback_config.get('tts', {})
-            feedback_player = TTSFeedbackPlayer(
-                messages=tts_config.get('messages', ["我在", "请吩咐", "我在听"]),
-                model_path=tts_config.get('model_path', './models/piper/zh_CN-huayan-medium.onnx'),
-                length_scale=tts_config.get('length_scale', 1.0),
-                noise_scale=tts_config.get('noise_scale', 0.667),
-                noise_w_scale=tts_config.get('noise_w_scale', 0.8),
-                sentence_silence=tts_config.get('sentence_silence', 0.0),
-                text_enhancement=tts_config.get('text_enhancement', {}),
-                random_message=tts_config.get('random_message', False),
-                cache_audio=tts_config.get('cache_audio', True),
-                output_device=audio_config.get('output_device', 'plughw:0,0'),
-                volume_gain=tts_config.get('volume_gain', 1.0)
+            # TTS 语音回复（支持多种引擎：Piper、千问、混合等）
+            feedback_messages = feedback_config.get('tts', {}).get('messages', ["我在", "请吩咐", "我在听"])
+            output_device = audio_config.get('output_device', 'plughw:0,0')
+
+            # 获取完整的 TTS 配置（用于引擎选择）
+            tts_full_config = config.get_section('tts') or {}
+
+            # 如果没有配置 engine，默认使用 piper
+            if 'engine' not in tts_full_config:
+                tts_full_config['engine'] = 'piper'
+
+            # 确保 local 配置存在（用于 Piper）
+            if 'local' not in tts_full_config:
+                tts_full_config['local'] = {
+                    'model_path': feedback_config.get('tts', {}).get('model_path', './models/piper/zh_CN-huayan-medium.onnx'),
+                    'length_scale': feedback_config.get('tts', {}).get('length_scale', 1.0),
+                    'noise_scale': feedback_config.get('tts', {}).get('noise_scale', 0.667),
+                    'noise_w_scale': feedback_config.get('tts', {}).get('noise_w_scale', 0.8),
+                    'sentence_silence': feedback_config.get('tts', {}).get('sentence_silence', 0.0),
+                    'text_enhancement': feedback_config.get('tts', {}).get('text_enhancement', {}),
+                }
+
+            feedback_player = GenericTTSFeedbackPlayer(
+                messages=feedback_messages,
+                tts_config=tts_full_config,
+                random_message=feedback_config.get('tts', {}).get('random_message', False),
+                cache_audio=feedback_config.get('tts', {}).get('cache_audio', True),
+                output_device=output_device
             )
-            logger.info(f"使用 Piper TTS 语音回复模式 (语速: {tts_config.get('length_scale', 1.0)})")
-            logger.info(f"音频输出设备: {audio_config.get('output_device', 'plughw:0,0')}")
+
+            engine_type = tts_full_config.get('engine', 'piper')
+            logger.info(f"使用 TTS 语音回复模式 (引擎: {engine_type})")
+            logger.info(f"音频输出设备: {output_device}")
         else:
             # 蜂鸣声或音频文件
             feedback_player = AudioFeedbackPlayer(
@@ -220,9 +290,17 @@ def main():
         if llm_config.get('enabled', False) and LLM_AVAILABLE:
             logger.info("初始化 LLM 引擎...")
             try:
+                # 读取模型名称（必须显式配置，防止使用默认值产生意外费用）
+                model_name = llm_config.get('model')
+                if not model_name:
+                    raise ValueError(
+                        "LLM 模型未配置。请在 config.yaml 的 llm.model 中指定模型名称 "
+                        "(如 'qwen-turbo', 'qwen-plus', 'qwen-max' 或其他自定义模型)"
+                    )
+
                 llm_engine = QwenLLMEngine(
-                    api_key=llm_config.get('api_key'),
-                    model=llm_config.get('model', 'qwen-turbo'),
+                    api_key=_expand_env_var(llm_config.get('api_key')),
+                    model=model_name,
                     temperature=llm_config.get('temperature', 0.7),
                     max_tokens=llm_config.get('max_tokens', 3000),
                     max_tokens_long=llm_config.get('max_tokens_long', 8000),
@@ -373,7 +451,7 @@ def main():
         logger.info(f"  TTS: {'✅' if tts_engine else '❌'}")
 
         # 准备回声检测词汇
-        wake_words = ["派蒙", "alexa"]  # 默认唤醒词
+        wake_words = ["胡桃", "alexa"]  # 默认唤醒词
         wake_reply_messages = []
 
         # 从配置中读取唤醒回复消息

@@ -184,7 +184,11 @@ def detect_alarm_intent(text: str, llm_engine=None) -> Optional[AlarmIntent]:
 
 def _contains_any(text: str, keywords: List[str]) -> bool:
     """
-    检查文本是否包含任意关键词
+    检查文本是否包含任意关键词（智能匹配）
+
+    规则：
+    1. 多字关键词（如"闹钟"、"提醒"）：直接包含匹配
+    2. 单字关键词（如"定"）：检查是否在闹钟相关搭配中出现
 
     Args:
         text: 文本
@@ -193,7 +197,98 @@ def _contains_any(text: str, keywords: List[str]) -> bool:
     Returns:
         bool: 是否包含
     """
-    return any(keyword in text for keyword in keywords)
+    for keyword in keywords:
+        # 多字关键词直接匹配
+        if len(keyword) > 1:
+            if keyword in text:
+                return True
+        else:
+            # 单字关键词需要检查上下文
+            if keyword in text:
+                # 检查是否在闹钟相关的搭配中出现
+                if _is_alarm_context(text, keyword):
+                    return True
+    return False
+
+
+def _is_alarm_context(text: str, char: str) -> bool:
+    """
+    检查单字关键词是否在闹钟相关的上下文中
+
+    合法的上下文：
+    - "定" + 时间词 → "定个闹钟"、"定明天早上"
+    - "叫" + 时间/人 → "叫醒"、"叫弟弟起床"
+    - "提醒" 相关
+    - "设置" + 闹钟 → "设置闹钟"
+
+    非法上下文：
+    - "确定" 的 "定"
+    - "弟弟" 不应该匹配 "叫"
+
+    Args:
+        text: 文本
+        char: 单字关键词
+
+    Returns:
+        bool: 是否在闹钟上下文中
+    """
+    # 找到字符的所有位置
+    indices = [i for i, c in enumerate(text) if c == char]
+
+    for i in indices:
+        # 检查周围的字符
+        prev_char = text[i-1] if i > 0 else None
+        next_char = text[i+1] if i < len(text)-1 else None
+
+        # 检查前面的字符（排除误报）
+        if prev_char and _is_chinese(prev_char):
+            # 前面是汉字，检查是否是常见误报
+            if prev_char in "确锁定锁定完成成":  # "确定"、"锁定"等
+                continue
+
+        # 检查后面更多字符（最多5个）
+        if i + 5 < len(text):
+            next_5_chars = text[i+1:i+6]
+            # 检查完整时间表达
+            if any(time_expr in next_5_chars for time_expr in [
+                "明天", "今天", "后天", "早上", "上午", "中午", "下午", "晚上"
+            ]):
+                return True
+
+        # 检查后面的字符
+        if next_char:
+            # 后面跟着量词、时间词、名词，可能是闹钟相关
+            if next_char in "个一二三四五六七八九十百千万早中午晚上下天时分秒明今":
+                return True
+            # 后面跟着"醒"、"起"，是叫醒
+            if next_char in "醒起":
+                return True
+            # 后面跟着"闹钟提醒"，直接匹配
+            if i + 2 < len(text):
+                two_chars = text[i+1:i+3]
+                if two_chars in ["闹钟", "提醒"]:
+                    return True
+        else:
+            # 后面没有字符（在结尾），可能是关键词独立出现
+            return True
+
+        # 检查前面是否有闹钟相关词
+        if prev_char:
+            # 前面有动词，可能是闹钟
+            if prev_char in "设添加":  # "设置"、"添加"
+                return True
+            # 前面有时间词
+            if prev_char in "早晚上午下午明天今天昨后前大":
+                return True
+
+    return False
+
+
+def _is_chinese(char: str) -> bool:
+    """检查字符是否是汉字"""
+    if not char:
+        return False
+    return '\u4e00' <= char <= '\u9fff'
 
 
 def _contains_time_pattern(text: str) -> bool:

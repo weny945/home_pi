@@ -1,41 +1,830 @@
 # ========================================
-# 语音助手系统配置文件
-# Voice Assistant Configuration
-# 版本: 0.1.0 (第一阶段)
+# 语音助手配置文件示例
+# Voice Assistant Configuration Example
+# ========================================
+#
+# 使用说明：
+#   1. 复制此文件为 config.yaml
+#      cp config.example.yaml config.yaml
+#
+#   2. 根据实际情况修改配置
+#      vi config.yaml
+#
+#   3. 配置环境变量（推荐使用 .env.sh）
+#      source .env.sh
+#
+# 版本：v2.2.0
 # ========================================
 
 # ========================================
-# 音频配置
+# 音频输入配置
 # ========================================
 audio:
-  input_device: "seeed-4mic-voicecard"  # ReSpeaker 4-Mic 设备名称
-  sample_rate: 16000                     # 采样率 16kHz
-  channels: 1                            # 单声道
-  chunk_size: 512                        # 音频块大小 (32ms @ 16kHz)
-  format: "int16"                        # 16-bit PCM
+  # 输入设备选择
+  # • seeed-4mic-voicecard: ReSpeaker 4-Mic Array (推荐)
+  # • default: 系统默认麦克风
+  # • plughw:0,0: ALSA 设备
+  input_device: "seeed-4mic-voicecard"
+
+  # 采样率（Hz）
+  # ReSpeaker 4-Mic 固定为 16000Hz
+  sample_rate: 16000
+
+  # 通道数
+  # 1 = 单声道, 2 = 立体声
+  channels: 1
+
+  # 音频块大小
+  # • 1024: 64ms @ 16kHz (推荐，延迟适中)
+  # • 512: 32ms @ 16kHz (更低延迟)
+  # • 2048: 128ms @ 16kHz (更稳定)
+  chunk_size: 1024
+
+  # 软件增益（音量放大）
+  # • 1.0: 无增益（默认）
+  # • 1.5-2.0: 适度放大（推荐，提高远场拾音）
+  # • 2.0-3.0: 较大放大（噪音可能增加）
+  # 注意：过高的增益可能导致音频失真或噪音
+  input_gain: 1.5
 
 # ========================================
-# 唤醒词配置
-# ========================================
-wakeword:
-  engine: "openwakeword"
-  model: "hey_jarvis_v0.1.ppn"         # 唤醒词模型路径
-  threshold: 0.5                         # 检测阈值 (0-1)
-  model_dir: "./models/openwakeword"         # 模型存储目录
-
-# ========================================
-# 唤醒反馈配置
+# 反馈配置（唤醒后播放的提示音）
 # ========================================
 feedback:
   enabled: true
-  mode: "beep"                           # "beep" 蜂鸣声 或 "audio_file" 音频文件
-  audio_file: "./assets/wake_success.wav"  # 音频文件路径 (WAV格式)
-  beep_duration_ms: 200                  # 蜂鸣声持续时间 (毫秒)
-  beep_frequency: 880                    # 蜂鸣声频率 (Hz)
+
+  # 反馈模式
+  # • beep: 蜂鸣声（快速）
+  # • audio_file: 播放音频文件
+  # • tts: 语音回复（需配置 TTS）
+  mode: "tts"
+
+  # 音频文件路径（mode: "audio_file" 时使用）
+  audio_file: "./assets/wake_success.wav"
+
+  # 蜂鸣声配置（mode: "beep" 时使用）
+  beep_duration_ms: 200      # 持续时间（毫秒）
+  beep_frequency: 880        # 频率（Hz）
+
+  # TTS 语音回复配置（mode: "tts" 时使用）
+  tts:
+    # TTS 引擎类型
+    # • piper: 本地 Piper TTS（快速、离线）
+    # • qwen: 千问 TTS（高质量、需联网）
+    engine: "piper"
+
+    # Piper 模型路径
+    model_path: "./models/piper/zh_CN-huayan-medium.onnx"
+
+    # 语速缩放
+    # • 1.0 = 正常速度
+    # • 0.8 = 更快
+    # • 1.2 = 更慢
+    length_scale: 1.0
+
+    # 唤醒回复消息列表（随机选择）
+    messages:
+      - "我在"
+      - "请吩咐"
+      - "我在听"
+      - "在呢在呢"
+      - "干啥啊"
+      - "您好"
+      - "我在这里"
+      - "指令已接收，长官"
+      - "我听到了哦"
+      - "我来了"
+      - "醒来了"
+
+    # 是否随机选择消息（true）还是顺序循环（false）
+    random_message: true
+
+    # 是否缓存音频文件（加快响应）
+    cache_audio: true
+
+# ========================================
+# 唤醒词检测配置
+# ========================================
+wakeword:
+  enabled: true
+
+  # 唤醒词引擎
+  # • openwakeword: OpenWakeWord（离线、无需 Key）
+  # • picovoice: Picovoice Porcupine（高性能、需 Key）
+  engine: "openwakeword"
+
+  # ========================================
+  # OpenWakeWord 配置（engine: "openwakeword"）
+  # ========================================
+  # 唤醒词模型路径
+  model_path: "./models/openwakeword"
+
+  # 唤醒词（自定义训练的模型）
+  # 当前使用：胡桃
+  # 可以替换为其他自定义唤醒词
+  keywords:
+    - "胡桃"          # 主要唤醒词
+
+  # 检测阈值（0.0-1.0）
+  # • 值越低：越敏感（可能误触发）
+  # • 值越高：越严格（可能漏检）
+  # • 推荐：0.5-0.7
+  threshold: 0.5
+
+  # ========================================
+  # Picovoice Porcupine 配置（engine: "picovoice"）
+  # ========================================
+  # 模型文件路径（.ppn）
+  # model: "models/picovoice/胡桃_zh_raspberry-pi_v4_0_0.ppn"
+
+  # 检测灵敏度（0.0-1.0）
+  # sensitivity: 0.5
+
+  # Picovoice Access Key（官网训练的唤醒词必需）
+  # 获取方式：https://console.picovoice.ai/
+  # access_key: "${PICOVOICE_ACCESS_KEY}"
+
+  # Porcupine 模型路径（可选，.pv 文件）
+  # porcupine_model: null  # null 使用默认树莓派模型
 
 # ========================================
 # 日志配置
 # ========================================
 logging:
-  level: "INFO"                          # DEBUG, INFO, WARNING, ERROR
-  file: "./logs/phase1.log"              # 日志文件路径
+  # 日志级别
+  # • DEBUG: 详细调试信息
+  # • INFO: 一般信息（推荐）
+  # • WARNING: 警告信息
+  # • ERROR: 错误信息
+  level: "INFO"
+
+  # 日志文件路径
+  file: "./logs/assistant.log"
+
+  # 日志格式
+  # • detailed: 详细格式（时间、级别、模块、消息）
+  # • simple: 简单格式
+  format: "detailed"
+
+  # 是否输出到控制台
+  console: true
+
+# ========================================
+# 语音识别配置 (STT) - Phase 1.2
+# ========================================
+stt:
+  # 是否启用 STT
+  enabled: true
+
+  # STT 引擎
+  # • funasr: FunASR（推荐、离线）
+  engine: "funasr"
+
+  # 模型名称
+  model: "iic/SenseVoiceSmall"
+
+  # 运行设备
+  # • cpu: CPU（树莓派5推荐）
+  # • cuda:0: GPU（需要 NVIDIA 显卡）
+  device: "cpu"
+
+  # 标点恢复模型（可选）
+  # • null: 禁用（节省内存）
+  # • ct-punc: 标准标点恢复模型
+  punc_model: null
+
+# ========================================
+# 语音活动检测配置 (VAD) - Phase 1.2
+# ========================================
+vad:
+  # 是否启用 VAD
+  enabled: true
+
+  # VAD 模型名称
+  model: "fsmn-vad"
+
+  # 运行设备
+  device: "cpu"
+
+# ========================================
+# 录音配置 - Phase 1.2
+# ========================================
+listening:
+  # 最大录音时长（秒）
+  max_duration: 10
+
+  # 静音阈值（秒）
+  # 超过这个时间没有检测到语音，自动结束录音
+  silence_threshold: 1.5
+
+  # 最小语音时长（秒）
+  # 少于这个时长的语音会被视为无效
+  min_speech_duration: 0.5
+
+# ========================================
+# 处理配置 - Phase 1.2
+# ========================================
+processing:
+  # STT 识别超时（秒）
+  timeout: 5
+
+# ========================================
+# 对话生成配置 (LLM) - Phase 1.3
+# ========================================
+llm:
+  # 是否启用 LLM 对话生成
+  enabled: true
+
+  # LLM 引擎
+  # • qwen: 阿里云千问（推荐）
+  # • deepseek: DeepSeek（性价比高）
+  engine: "qwen"
+
+  # 模型选择
+  # 千问模型：
+  # • qwen-turbo: 快速、便宜（推荐日常使用）
+  # • qwen-plus: 平衡
+  # • qwen-max: 高质量、较慢
+  #
+  # DeepSeek 模型：
+  # • deepseek-chat: 对话模型
+  # • deepseek-coder: 代码模型
+  model: "qwen-turbo"
+
+  # API 密钥（推荐使用环境变量）
+  # 获取方式：https://dashscope.console.aliyun.com/
+  # 或使用：source .env.sh
+  api_key: "${DASHSCOPE_API_KEY}"
+
+  # 生成参数
+  temperature: 0.7        # 温度（0.0-1.0），越高越随机
+  max_tokens: 3000        # 最大生成 token 数
+  max_tokens_long: 8000   # 长文本模式最大 token 数
+
+  # 对话历史
+  enable_history: true    # 是否启用对话历史
+  max_history: 10         # 最大对话历史轮数
+
+  # 长文本检测关键词（自动切换到长文本模式）
+  long_text_keywords:
+    - "讲个故事"
+    - "讲故事"
+    - "详细说说"
+    - "展开讲讲"
+    - "多说一点"
+    - "完整介绍"
+    - "详细描述"
+
+  # 角色设定
+  # 系统提示词，用于设定助手的角色、性格和回复风格
+  system_prompt: |
+    你是一个名为"胡桃"的智能语音助手。
+    你的特点：
+    - 友好、热情、幽默
+    - 回复简洁明了，通常不超过50字
+    - 擅长回答日常问题
+    - 如果不知道答案，会诚实告知
+    - 使用口语化的表达，避免过于正式
+    - **重要：回复中避免使用英文单词，用中文音译或解释代替**
+    - 例如：Good morning → "早上好"，WiFi → "无线网络"，APP → "应用程序"
+
+  # 长文本模式系统提示词（检测到讲故事、详细说明等需求时使用）
+  system_prompt_long: |
+    你是一个名为"胡桃"的智能语音助手。
+    你的特点：
+    - 友好、热情、幽默
+    - 回答问题时内容丰富、详细，通常回复200-500字
+    - 遇到历史、科学、文化等问题时，会主动提供更多背景信息和相关知识
+    - 讲故事时会有完整的起承转合，细节生动
+    - 如果不知道答案，会诚实告知
+    - 使用口语化的表达，避免过于正式
+    - **重要：回复中避免使用英文单词，用中文音译或解释代替**
+
+# ========================================
+# 语音合成配置 (TTS) - Phase 1.3 / v2.2
+# ========================================
+tts:
+  # ========================================
+  # 引擎类型选择
+  # ========================================
+  # 可选引擎：
+  # • piper: 仅本地 Piper（最快，完全离线）
+  # • hybrid: 本地 Piper + 远程主机 GPT-SoVITS
+  # • remote: 仅远程主机 GPT-SoVITS
+  # • remote-qwen: 仅千问 TTS（非流式）[v2.2 新增]
+  # • hybrid-qwen: 千问 TTS + Piper 降级 + 流式 + 缓存 [v2.2 新增，推荐]
+  # • doubao: 豆包 TTS（火山引擎 V3 HTTP 单向流式）[v2.3 新增]
+  engine: "piper"
+
+  # ========================================
+  # 豆包 TTS 配置 [v2.3 新增]
+  # 当 engine="doubao" 时生效
+  # ========================================
+  doubao:
+    # API 配置（从火山引擎控制台获取）
+    # 控制台: https://console.volcengine.com/speech/service
+    api_key: "${DOUBAO_ACCESS_KEY}"    # Access Token（推荐使用环境变量）
+    app_id: "${DOUBAO_APP_ID}"         # APP ID（推荐使用环境变量）
+    uid: "default_user"                # 用户唯一标识
+
+    # 资源 ID（选择模型版本）
+    # • seed-tts-1.0: 豆包语音合成模型 1.0（字符版）
+    # • seed-tts-1.0-concurr: 豆包语音合成模型 1.0（并发版）
+    # • seed-tts-2.0: 豆包语音合成模型 2.0（字符版，推荐）
+    resource_id: "seed-tts-2.0"        # ← 根据你的订阅选择
+
+    # 模型版本（可选，仅用于模型 2.0 的 saturn 音色）
+    # • seed-tts-2.0-expressive: 表现力强，支持 QA/Cot（默认）
+    # • seed-tts-2.0-standard: 表现力稳定
+    # • 不传: 使用默认效果
+    model: "seed-tts-2.0-expressive"
+
+    # 发音人选择
+    # 模型 1.0 发音人（resource_id: seed-tts-1.0）：
+    #   • zh_female_shuangkuaisisi_moon_bigtts: 双快思思-月（女声，推荐）
+    #   • zh_female_qingxinmeili: 清新美丽女声
+    #   • zh_male_qingchen: 清朗男声（推荐）
+    #
+    # 模型 2.0 发音人（resource_id: seed-tts-2.0）：
+    #   • zh_female_qingxinmeili: 清新美丽女声（推荐）
+    #   • zh_female_wenrou: 温柔女声
+    #   • zh_male_wennuan: 温暖男声（推荐）
+    voice: "zh_female_qingxinmeili"  # 根据你的模型选择
+
+    # 音频参数
+    format: "pcm"               # 音频格式: pcm（推荐，无需额外库）, mp3, wav
+    sample_rate: 24000          # 采样率: 8000, 16000, 22050, 24000（推荐）, 32000, 44100, 48000
+    speed: 0                    # 语速 [-50, 100]，0=正常，100=2倍速
+    volume: 0                   # 音量 [-50, 100]，0=正常
+
+    # 超时和重试
+    timeout: 30                 # 请求超时（秒）
+    retry: 2                    # 失败重试次数
+
+    # 缓存配置
+    cache:
+      enabled: true             # 是否启用缓存
+      cache_dir: "./data/tts_cache"  # 缓存目录
+      max_cache_age_days: 30    # 缓存最大保留天数（0=永久）
+
+  # ========================================
+  # 混合引擎配置（当 engine="hybrid" 时生效）
+  # ========================================
+  hybrid:
+    health_check_interval: 3600  # 健康检查间隔（秒）
+    auto_failback: true          # 是否自动切回远程 TTS
+
+  # ========================================
+  # 远程 TTS 配置（GPT-SoVITS API）
+  # 当 engine="hybrid" 或 "remote" 时生效
+  # ========================================
+  remote:
+    enabled: true
+    server_ip: "192.168.2.141"   # 服务器 IP 地址
+    port: 9880                   # 端口号
+    timeout: 60                  # 超时时间（秒）
+    text_lang: "zh"              # 文本语言
+    speed: 1.0                   # 语速
+    max_text_length: 100         # 最大文本长度
+
+  # ========================================
+  # 本地 TTS 配置（Piper）
+  # 当 engine="piper", "hybrid", "hybrid-qwen" 时生效
+  # ========================================
+  local:
+    engine: "piper"
+    model_path: "./models/piper/zh_CN-huayan-medium.onnx"
+
+    # === 语音合成参数 ===
+    length_scale: 1.0            # 语速缩放 (1.0=正常, <1.0=更快, >1.0=更慢)
+    noise_scale: 0.75            # 音色随机性/情感波动
+    noise_w_scale: 0.8           # 韵律噪声/语气变化
+    sentence_silence: 0.2        # 句间停顿时长（秒）
+
+    # === 文本增强配置 ===
+    text_enhancement:
+      enabled: true
+      pause_marks_enabled: true   # 支持 [PAUSE:0.5] 标记
+      pause_to_punctuation:
+        enabled: true
+        short_pause: "，"
+        medium_pause: "，。"
+        long_pause: "，。。。"
+        commas_per_second: 2
+      remove_wavy_tilde: true     # 是否移除波浪线（～~）避免发音异常
+      fix_final_particles: true   # 是否修复句尾助词（的、了、着）的发音
+
+  # ========================================
+  # 千问 TTS 配置 [v2.2 新增]
+  # 当 engine="hybrid-qwen" 或 "remote-qwen" 时生效
+  # ========================================
+  qwen:
+    enabled: true                 # 是否启用千问 TTS
+    provider: "dashscope"         # "dashscope" | "openai"
+
+    # Dashscope 千问 TTS 配置（非流式 HTTP API）
+    dashscope:
+      # API 密钥（推荐使用环境变量）
+      # 获取方式：https://dashscope.console.aliyun.com/
+      # 或使用：source .env.sh
+      api_key: "${DASHSCOPE_API_KEY}"
+
+      # API 端点
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/generation"
+
+      # 模型选择
+      model: "qwen3-tts-flash"    # Flash 模型（快速、高质量）
+
+      # 音频参数
+      format: "mp3"               # 音频格式: mp3, wav, pcm
+      sample_rate: 24000          # 采样率: 8000, 16000, 24000
+      volume: 50                  # 音量 (0-100)
+
+      # 语音风格（发音人）
+      voice: "zhixiaobai"         # 发音人选择:
+                                 # • zhixiaobai (小白)：年轻男声，日常对话
+                                 # • zhichu (小楚)：温柔女声，陪伴场景
+                                 # • zhitian (小天)：活泼男声，儿童场景
+                                 # • zhinan (小楠)：成熟女声，助手场景
+                                 # • zhiqi (小奇)：可爱女声，娱乐场景
+
+      # 语速和音调
+      rate: 1.0                   # 语速 (0.5-2.0)
+      pitch: 1.0                  # 音调 (0.5-2.0)
+
+      # 超时配置
+      timeout: 30                 # 请求超时（秒）
+      retry: 2                    # 失败重试次数
+
+    # OpenAI TTS 配置（备选）
+    openai:
+      api_key: "${OPENAI_API_KEY}"
+      endpoint: "https://api.openai.com/v1/audio/speech"
+      model: "tts-1"              # tts-1 (快) | tts-1-hd (高质)
+      voice: "alloy"              # alloy, echo, fable, onyx, nova, shimmer
+      timeout: 30
+
+  # ========================================
+  # 千问流式 TTS 配置 [v2.2 新增]
+  # 当 engine="hybrid-qwen" 时生效（流式引擎）
+  # ========================================
+  qwen_realtime:
+    enabled: true                 # 是否启用千问流式 TTS
+
+    # Dashscope 千问流式 TTS 配置
+    dashscope:
+      # API 密钥（推荐使用环境变量）
+      api_key: "${DASHSCOPE_API_KEY}"
+
+      # WebSocket 端点
+      url: "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+
+      # 模型选择（流式专用）
+      model: "qwen3-tts-flash-realtime"  # 流式 Flash 模型
+
+      # 音频参数
+      voice: "zhixiaobai"          # 发音人（同 qwen 非流式）
+      format: "pcm"                # 音频格式: pcm（流式推荐）
+      sample_rate: 24000           # 采样率: 24000（推荐）
+
+      # 流式模式
+      mode: "server_commit"        # server_commit（推荐）| commit
+                                  # • server_commit: 服务端自动提交（更简单）
+                                  # • commit: 客户端显式提交（更可控）
+
+      # 超时配置
+      timeout: 30                  # WebSocket 连接超时（秒）
+
+  # ========================================
+  # hybrid-qwen 混合策略配置 [v2.2 新增]
+  # 当 engine="hybrid-qwen" 时生效
+  # ========================================
+  # 逻辑：智能选择流式/非流式，失败时降级到本地 Piper
+  hybrid_qwen:
+    # 流式切换配置
+    streaming_threshold: 100      # 文本长度阈值（字符数）
+                                # • ≥100字符：使用流式 API
+                                # • <100字符：使用非流式 API
+    scenario_streaming:           # 场景级别流式配置
+      llm_reply_long: "streaming"      # LLM 长回复 → 流式
+      alarm_cheerword: "streaming"     # 闹钟打气词 → 流式
+      story_telling: "streaming"       # 讲故事 → 流式
+      article_reading: "streaming"     # 文章阅读 → 流式
+      long_content: "streaming"        # 长内容 → 流式
+      wake_response: "non_streaming"   # 唤醒回复 → 非流式
+      system_prompt: "non_streaming"   # 系统提示 → 非流式
+      music_control: "non_streaming"   # 音乐控制 → 非流式
+
+    # 降级配置
+    fallback_to_piper: true       # 千问失败时降级到 Piper
+
+    # 失败重试配置
+    max_retries: 2                # 千问 TTS 失败重试次数
+    retry_delay: 1.0              # 重试延迟（秒）
+
+    # 性能监控
+    enable_monitoring: true       # 是否启用性能监控
+    log_decision: true            # 是否记录引擎切换日志
+
+    # ========================================
+    # 缓存配置 [v2.2 新增]
+    # ========================================
+    cache:
+      enabled: true               # 是否启用缓存
+      warmup_on_startup: true     # 启动时预热常用短语
+      cache_dir: "./data/tts_cache"  # 缓存目录
+      max_cache_age_days: 30      # 缓存最大保留天数（0=永久）
+
+      # 预热短语列表（可选，默认从配置自动提取）
+      # 留空则自动从 feedback.tts.messages、retry_prompts 等提取
+      warmup_phrases: []          # 自定义预热短语列表
+
+# ========================================
+# 音频质量检测配置 - Phase 1.4
+# ========================================
+audio_quality:
+  enabled: true                  # 是否启用音频质量检测
+
+  # 检测规则
+  min_duration: 0.5              # 最小音频时长（秒）
+  min_energy: 0.01               # 最小平均能量
+  min_speech_duration: 0.3       # 最小有效语音时长（秒），过滤瞬态噪音
+
+  # 智能尾端点检测
+  smart_silence_threshold: 2.0   # 智能静音超时（秒），比基础超时更长
+
+  # 自适应 VAD
+  vad:
+    adaptive_enabled: true       # 启用自适应阈值
+    base_threshold: 0.04         # 基础阈值
+    adaptation_factor: 1.5       # 自适应系数（阈值 = 底噪 × 系数）
+    noise_window_size: 100       # 底噪样本窗口大小
+    reset_interval: 300          # 重置间隔（秒）
+
+  # Phase 1.5 新增：智能打断
+  interrupt:
+    enabled: true                # 是否启用智能打断
+    detection_interval: 10       # 检测间隔（帧数，约 300ms）
+    buffer_duration: 2.0         # 打断缓冲录音时长（秒）
+    min_speech_duration: 0.3     # 最小语音时长（秒）
+
+  # 重试配置
+  max_retries: 0                 # 最大重试次数
+
+  # 分级重试提示语
+  retry_prompts:
+    silence:                     # 静音/太短
+      retry_1:
+        - "抱歉，没听到您的声音，能再说一遍吗？"
+        - "您刚才没说话，请再试一次"
+      retry_2:
+        - "还是没听到，请靠近麦克风大声一点说"
+        - "好像还是不太清楚，请重新说一遍"
+      retry_3:
+        - "抱歉暂时无法识别，我们换个话题吧"
+
+    fragment:                    # 断句/不完整
+      retry_1:
+        - "请完整说出您的问题"
+        - "话说一半啦，继续说吧"
+      retry_2:
+        - "请说完整一点，不要断断续续的"
+        - "能完整地再说一遍吗？"
+      retry_3:
+        - "抱歉暂时无法识别，我们换个话题吧"
+
+    semantic:                    # 语义不明
+      retry_1:
+        - "抱歉，不太明白您的意思，能再说一遍吗？"
+        - "能说得更清楚一点吗？"
+      retry_2:
+        - "还是不太理解，请换个方式描述"
+        - "能详细说明一下您的需求吗？"
+      retry_3:
+        - "抱歉暂时无法识别，我们换个话题吧"
+
+    garbage:                     # 乱码
+      retry_1:
+        - "抱歉，我没听清，能再说一遍吗？"
+      retry_2:
+        - "还是听不清楚，请重新说一遍"
+      retry_3:
+        - "抱歉暂时无法识别，我们换个话题吧"
+
+    high_noise:                  # 高噪音环境提示
+      - "环境有点吵，请靠近一点说"
+      - "检测到背景噪音，请安静一些"
+
+# ========================================
+# 文本质量检测配置 - Phase 1.4
+# ========================================
+text_quality:
+  enabled: true                  # 是否启用文本质量检测
+  min_length: 1                  # 最小文本长度（汉字），至少1个字
+  invalid_words:                 # 无效词汇列表
+    - "嗯"
+    - "嗯嗯"
+    - "呃"
+    - "啊"
+    - "喔"
+    - "哦"
+    - "嘿"
+    - "咳"
+    - "哼"
+    - "那个"
+    - "这个"
+
+# ========================================
+# LED 反馈配置 - Phase 1.4（可选增强）
+# ========================================
+led_feedback:
+  enabled: false                 # 是否启用 LED 反馈（默认禁用）
+  pin: 12                        # GPIO 引脚号
+  led_count: 12                  # LED 数量
+  brightness: 0.5                # 亮度 (0-1)
+
+# ========================================
+# 对话增强配置 - Phase 1.5
+# ========================================
+conversation:
+  enabled: true                  # 是否启用对话增强
+
+  # 上下文管理
+  context_memory: true           # 是否启用上下文记忆
+  max_turns: 10                  # 最大对话轮数
+
+  # 自动收尾
+  auto_farewell:
+    enabled: true                # 是否启用自动收尾
+    idle_timeout: 8.0            # 空闲超时（秒）
+    farewell_messages:           # 道别消息列表
+      - "好的，那先这样吧"
+      - "嗯，好的"
+      - "那下次再聊"
+
+  # 延续性表达支持
+  continuation_support: true     # 是否支持延续性表达（如"明天呢"）
+
+# ========================================
+# 技能系统配置 - Phase 1.5（框架）
+# ========================================
+skills:
+  enabled: false                 # Phase 1.5 默认禁用，预留扩展
+  skills_list: []                # 技能列表（未来可添加）
+
+# ========================================
+# 智能开关配置 - Phase 1.6
+# ========================================
+smart_switch:
+  enabled: false                 # 是否启用智能开关（默认禁用）
+  mqtt_broker: "192.168.2.141"    # MQTT 代理地址
+  mqtt_port: 1883                # MQTT 端口
+  mqtt_username: ""              # MQTT 用户名（可选）
+  mqtt_password: ""              # MQTT 密码（可选）
+  switches:                       # 开关列表
+    - name: "台灯"
+      topic: "home/lamp"
+      control_topics:
+        on: "home/lamp/set"
+        off: "home/lamp/set"
+      keywords:
+        - "打开台灯"
+        - "关闭台灯"
+        - "台灯打开"
+        - "台灯关闭"
+
+# ========================================
+# 闹钟配置 - Phase 1.7
+# ========================================
+alarm:
+  enabled: true                  # 是否启用闹钟功能
+
+  # 存储配置
+  storage:
+    type: "sqlite"               # 存储类型: sqlite
+    path: "./data/alarms.db"      # 数据库文件路径
+
+  # 闹钟铃声配置
+  ringtone:
+    type: "tts"                   # 铃声类型: tts（语音）| audio_file（音频文件）
+    text: "闹钟响了，该起床啦！"  # TTS 铃声文本
+    audio_file: "./assets/alarm_ringtone.wav"  # 音频铃声文件路径
+    volume: 0.7                   # 音量 (0.0-1.0)
+    duration: 30                  # 最大响铃时长（秒）
+
+  # 打气词配置
+  cheerword:
+    enabled: true                # 是否启用打气词
+    themes:
+      morning:
+        - "早上好！新的一天开始了，加油！"
+        - "早安！今天也要元气满满哦！"
+      sports:
+        - "运动时间到了，让我们一起动起来！"
+        - "生命在于运动，开始锻炼吧！"
+      study:
+        - "学习时间到了，专心专注哦！"
+        - "好好学习，天天向上！"
+
+  # 自然语言时间解析
+  time_parser:
+    enabled: true
+    fuzzy_match: true            # 是否启用模糊匹配
+
+# ========================================
+# 音乐播放配置 - Phase 1.8
+# ========================================
+music:
+  enabled: true                  # 是否启用音乐播放功能
+
+  # 音乐库配置
+  library:
+    path: "./assets/music"       # 音乐文件目录
+    supported_formats:           # 支持的音频格式
+      - mp3
+      - wav
+      - ogg
+      - flac
+      - m4a
+      - aac
+
+  # 播放器配置
+  player:
+    initial_volume: 0.7          # 初始音量 (0.0-1.0)
+    fade_in_duration: 0.5        # 淡入时长（秒）
+    fade_out_duration: 0.5       # 淡出时长（秒）
+
+  # 语音控制关键词
+  keywords:
+    play:
+      - "播放"
+      - "放歌"
+      - "听歌"
+      - "放音乐"
+      - "来首歌"
+    pause:
+      - "暂停"
+      - "停一下"
+      - "等等"
+    resume:
+      - "继续"
+      - "接着放"
+      - "恢复播放"
+    stop:
+      - "停止"
+      - "关闭"
+      - "不听了"
+      - "关掉"
+    next:
+      - "下一首"
+      - "换一首"
+      - "切歌"
+    volume_up:
+      - "大声点"
+      - "声音大点"
+      - "调高音量"
+      - "音量加"
+    volume_down:
+      - "小声点"
+      - "声音小点"
+      - "调低音量"
+      - "音量减"
+
+# ========================================
+# 状态机配置
+# ========================================
+state_machine:
+  # 是否启用调试模式
+  debug: false
+
+  # 状态转换超时（秒）
+  transition_timeout: 60
+
+  # 是否记录状态转换日志
+  log_transitions: true
+
+# ========================================
+# 系统配置
+# ========================================
+system:
+  # 时区设置
+  timezone: "Asia/Shanghai"
+
+  # 语言设置
+  language: "zh-CN"
+
+  # 字符编码
+  encoding: "utf-8"
+
+# ========================================
+# 开发/调试配置
+# ========================================
+development:
+  # 是否启用调试模式
+  debug: false
+
+  # 性能分析
+  profiling: false
+
+  # 详细日志
+  verbose_logging: false

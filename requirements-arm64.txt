@@ -14,6 +14,13 @@ pyaudio>=0.2.12
 # 唤醒词检测
 openwakeword>=0.5.0
 
+# Picovoice Porcupine 唤醒词检测（可选）
+# 注意: 高性能唤醒词引擎，支持自定义唤醒词
+# - 官网训练: 需要 Access Key (https://console.picovoice.ai/)
+# - 本地 .ppn: 无需 Key
+# - 平台: ARM64 (树莓派)
+pvporcupine-arm64>=1.9.0  # ARM64 版本（树莓派）
+
 # 文本转语音 (TTS) - 第一阶段 1.1 - Piper TTS
 # 注意: Piper TTS 需要 ONNX 模型
 # - 模型大小: ~63MB

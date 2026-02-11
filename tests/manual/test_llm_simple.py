@@ -37,9 +37,13 @@ def test_llm():
     # 2. 初始化引擎
     print("\n🔧 初始化 LLM 引擎...")
     try:
+        model_name = llm_config.get('model')
+        if not model_name:
+            raise ValueError("配置文件中未指定 llm.model，请在 config.yaml 中设置")
+
         llm = QwenLLMEngine(
             api_key=api_key,
-            model=llm_config.get('model', 'qwen-turbo'),
+            model=model_name,
             temperature=llm_config.get('temperature', 0.7),
             max_tokens=llm_config.get('max_tokens', 1500),
             enable_history=llm_config.get('enable_history', True),

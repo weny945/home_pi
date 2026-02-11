@@ -54,6 +54,17 @@ class ReSpeakerInput(MicrophoneInput):
 
     def _find_device(self) -> None:
         """查找 ReSpeaker 设备索引"""
+        # 检查是否是 ALSA 设备名称格式（如 plughw:0,0, hw:0,0, default）
+        alsa_formats = ['plughw:', 'hw:', 'default', 'sysdefault']
+        is_alsa_device = any(self._device_name.startswith(fmt) for fmt in alsa_formats)
+
+        if is_alsa_device:
+            logger.info(f"使用 ALSA 设备名称: {self._device_name}")
+            # 不设置 device_index，稍后会通过其他方式打开
+            self._device_index = None
+            return
+
+        # 否则通过设备名称查找索引
         audio = pyaudio.PyAudio()
 
         for i in range(audio.get_device_count()):
@@ -66,8 +77,9 @@ class ReSpeakerInput(MicrophoneInput):
         audio.terminate()
 
         if self._device_index is None:
-            logger.warning(f"未找到设备 '{self._device_name}'，使用默认设备")
-            self._device_index = None  # 使用系统默认
+            logger.warning(f"未找到设备 '{self._device_name}'，将尝试使用 ALSA 默认设备")
+            # 尝试使用 ALSA 默认设备作为后备方案
+            self._device_name = "plughw:0,0"
 
     def start_stream(self) -> None:
         """启动音频流"""
@@ -78,20 +90,75 @@ class ReSpeakerInput(MicrophoneInput):
         self._audio = pyaudio.PyAudio()
 
         try:
-            self._stream = self._audio.open(
-                format=self._format,
-                channels=self._channels,
-                rate=self._sample_rate,
-                input=True,
-                input_device_index=self._device_index,
-                frames_per_buffer=self._chunk_size,
-                stream_callback=None
-            )
+            # 检查是否是 ALSA 设备名称
+            alsa_formats = ['plughw:', 'hw:', 'default', 'sysdefault']
+            is_alsa_device = any(self._device_name.startswith(fmt) for fmt in alsa_formats)
+
+            if is_alsa_device and self._device_index is None:
+                # 使用 ALSA 设备名称
+                # PyAudio 在 Linux 上默认使用 ALSA，可以直接通过名称打开
+                logger.info(f"尝试打开 ALSA 设备: {self._device_name}")
+
+                # 尝试查找匹配的设备索引
+                found_device = None
+                for i in range(self._audio.get_device_count()):
+                    info = self._audio.get_device_info_by_index(i)
+                    device_name_lower = info.get('name', '').lower()
+
+                    # 尝试多种匹配方式
+                    if (self._device_name in device_name_lower or
+                        'respeaker' in device_name_lower or
+                        'arrayuac10' in device_name_lower):
+                        # 检查是否有输入通道（某些设备报告为 0 但实际可用）
+                        logger.info(f"找到候选设备: {info['name']} (索引: {i})")
+                        found_device = i
+                        break
+
+                if found_device is not None:
+                    # 使用找到的设备
+                    self._stream = self._audio.open(
+                        format=self._format,
+                        channels=self._channels,
+                        rate=self._sample_rate,
+                        input=True,
+                        input_device_index=found_device,
+                        frames_per_buffer=self._chunk_size,
+                        stream_callback=None
+                    )
+                else:
+                    # 没找到匹配设备，尝试使用默认设备
+                    logger.warning("未找到匹配的 ALSA 设备，尝试使用默认输入设备")
+                    self._stream = self._audio.open(
+                        format=self._format,
+                        channels=self._channels,
+                        rate=self._sample_rate,
+                        input=True,
+                        input_device_index=None,  # 使用默认设备
+                        frames_per_buffer=self._chunk_size,
+                        stream_callback=None
+                    )
+            else:
+                # 使用设备索引
+                self._stream = self._audio.open(
+                    format=self._format,
+                    channels=self._channels,
+                    rate=self._sample_rate,
+                    input=True,
+                    input_device_index=self._device_index,
+                    frames_per_buffer=self._chunk_size,
+                    stream_callback=None
+                )
 
             logger.info(f"音频流已启动 (设备: {self._device_name or '默认'})")
 
         except Exception as e:
             logger.error(f"启动音频流失败: {e}")
+            logger.error("请尝试以下解决方法:")
+            logger.error("  1. 检查麦克风连接: lsusb | grep -i mic")
+            logger.error("  2. 检查 ALSA 设备: arecord -l")
+            logger.error("  3. 尝试录音测试: arecord -D plughw:0,0 -d 3 -f cd test.wav")
+            logger.error("  4. 检查 PyAudio 设备: python tests/manual/diagnose_audio_devices.py")
+            logger.error("  5. 重启系统: sudo reboot")
             self._audio.terminate()
             self._audio = None
             raise

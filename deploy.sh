@@ -341,6 +341,26 @@ else
     echo "  pip install funasr modelscope torchaudio"
 fi
 
+# 检查 websockets (v2.2 新增 - 千问流式 TTS)
+echo_info "检查 websockets (千问流式 TTS)..."
+if python -c "import websockets" 2>/dev/null; then
+    echo_info "✅ websockets 已安装"
+else
+    echo_warn "websockets 未安装"
+    echo "  千问流式 TTS 功能需要 websockets:"
+    echo "  pip install websockets>=12.0"
+fi
+
+# 检查 pydub (v2.2 新增 - 千问 TTS 音频解码)
+echo_info "检查 pydub (千问 TTS 音频解码)..."
+if python -c "import pydub" 2>/dev/null; then
+    echo_info "✅ pydub 已安装"
+else
+    echo_warn "pydub 未安装"
+    echo "  千问 TTS 音频解码需要 pydub:"
+    echo "  pip install pydub>=0.25.0"
+fi
+
 echo ""
 
 # 7. 配置文件
@@ -358,7 +378,47 @@ else
 fi
 echo ""
 
-# 8. 测试硬件（可选）
+# 7.5. 检查环境变量文件
+echo "========================================"
+echo "🔧 环境变量文件"
+echo "========================================"
+
+if [ ! -f "$PROJECT_DIR/.env.sh" ]; then
+    echo_warn ".env.sh 文件不存在"
+    echo ""
+    echo "⚠️  警告：未配置环境变量，LLM/TTS 功能将不可用"
+    echo ""
+    echo "请创建 .env.sh 文件并设置 DASHSCOPE_API_KEY:"
+    echo "  获取方式: https://dashscope.console.aliyun.com/"
+    echo ""
+else
+    echo_info "✅ 环境变量文件已找到: .env.sh"
+
+    # 检查 API Key 是否配置
+    if grep -q "sk-your-dashscope-api-key-here" "$PROJECT_DIR/.env.sh" 2>/dev/null; then
+        echo_warn "  API Key 使用默认值，请编辑 .env.sh 设置正确的密钥"
+    else
+        echo_info "  API Key 已配置"
+    fi
+fi
+echo ""
+
+# 8. 创建 TTS 缓存目录 (v2.2 新增)
+echo "========================================"
+echo "📁 创建 TTS 缓存目录"
+echo "========================================"
+
+CACHE_DIR="$PROJECT_DIR/data/tts_cache"
+if [ ! -d "$CACHE_DIR" ]; then
+    echo_info "创建缓存目录: $CACHE_DIR"
+    mkdir -p "$CACHE_DIR"
+    echo_info "✅ 缓存目录已创建"
+else
+    echo_info "✅ 缓存目录已存在"
+fi
+echo ""
+
+# 9. 测试硬件（可选）
 echo "========================================"
 echo "🧪 硬件测试（可选）"
 echo "========================================"
@@ -375,7 +435,7 @@ else
 fi
 echo ""
 
-# 9. 测试软件（可选）
+# 10. 测试软件（可选）
 echo "========================================"
 echo "🧪 软件测试（可选）"
 echo "========================================"
@@ -387,6 +447,7 @@ echo "  [3] v1.4 测试 (音频质量检测 + 自适应VAD + 分级重试)"
 echo "  [4] v1.5 测试 (智能打断 + 对话优化 + 技能框架)"
 echo "  [5] v1.7 测试 (语音定闹钟功能)"
 echo "  [6] v1.8 测试 (本地音乐播放功能)"
+echo "  [7] v2.2 测试 (千问 TTS + 流式 + 缓存)"
 echo "  [a] 全部测试"
 echo ""
 read -p "请选择: " test_choice
@@ -437,6 +498,13 @@ elif [[ "$test_choice" == "6" ]]; then
     else
         echo_warn "v1.8 测试文件不存在: tests/manual/test_music_e2e.py"
     fi
+elif [[ "$test_choice" == "7" ]]; then
+    if [ -f "$PROJECT_DIR/tests/manual/test_tts_cache.py" ]; then
+        echo_info "运行 v2.2 TTS 缓存测试..."
+        python3 tests/manual/test_tts_cache.py
+    else
+        echo_warn "v2.2 测试文件不存在: tests/manual/test_tts_cache.py"
+    fi
 elif [[ "$test_choice" == "a" ]] || [[ "$test_choice" == "A" ]]; then
     if [ -f "$PROJECT_DIR/tests/manual/test_software.py" ]; then
         echo_info "运行 v1.1-1.5 软件测试..."
@@ -465,7 +533,7 @@ SERVICE_FILE="/etc/systemd/system/voice-assistant.service"
 echo_info "创建 systemd 服务文件..."
 sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
-Description=Voice Assistant Service v1.8.0
+Description=Voice Assistant Service v2.2.0
 Documentation=https://github.com/your-repo/home_pi
 After=network.target sound.target
 
@@ -474,9 +542,11 @@ Type=simple
 User=admin
 WorkingDirectory=$PROJECT_DIR
 Environment="PATH=$VENV_DIR/bin:/usr/bin"
-ExecStart=$VENV_DIR/bin/python $PROJECT_DIR/main.py
+ExecStart=$PROJECT_DIR/start-wrapper.sh
 Restart=always
 RestartSec=10
+TimeoutStopSec=5
+KillMode=mixed
 
 StandardOutput=journal
 StandardError=journal
@@ -501,8 +571,11 @@ echo "后续步骤:"
 echo ""
 echo "1. 测试软件功能:"
 echo "   source .venv/bin/activate"
-echo "   python3 tests/manual/test_software.py       # v1.1 TTS 测试"
+echo "   python3 tests/manual/test_software.py       # v1.1-1.5 综合测试"
 echo "   python3 tests/manual/test_phase12_stt.py   # v1.2 STT 测试"
+echo "   python3 tests/manual/test_alarm_e2e.py     # v1.7 闹钟测试"
+echo "   python3 tests/manual/test_music_e2e.py     # v1.8 音乐测试"
+echo "   python3 tests/manual/test_tts_cache.py     # v2.2 TTS 缓存测试"
 echo ""
 echo "2. 查看服务状态:"
 echo "   sudo systemctl status voice-assistant.service"
@@ -549,6 +622,12 @@ echo "软件测试 v1.8 (音乐播放):"
 echo "  python3 tests/manual/test_music_e2e.py"
 echo "  - 测试本地音乐播放"
 echo "  - 测试语音控制（播放、暂停、音量）"
+echo ""
+echo "软件测试 v2.2 (千问 TTS + 缓存):"
+echo "  python3 tests/manual/test_tts_cache.py"
+echo "  - 测试缓存功能"
+echo "  - 测试预热常用短语"
+echo "  - 测试缓存持久化"
 echo ""
 echo "软件测试 v1.2 (STT专项):"
 echo "  python3 tests/manual/test_phase12_stt.py"

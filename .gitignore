@@ -41,7 +41,7 @@ models/jieba_cache/
 models/funast/
 
 # 配置 (敏感信息)
-.env
+.env.sh
 *.secret
 config.yaml
 !config.yaml.example
@@ -49,6 +49,9 @@ config.yaml
 # 临时文件
 *.tmp
 .DS_Store
+
+# 外部驱动/依赖
+seeed-voicecard/
 
 # 测试覆盖率
 .pytest_cache/
